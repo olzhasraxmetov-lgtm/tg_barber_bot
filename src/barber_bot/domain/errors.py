@@ -40,3 +40,11 @@ class AppointmentNotPastError(DomainError):
 
 class NotFoundError(DomainError):
     """Запрошенный объект не найден или не принадлежит клиенту."""
+
+
+class PhoneTakenError(DomainError):
+    """Телефон уже привязан к другому Telegram-аккаунту."""
+
+
+class ClientNotRegisteredError(DomainError):
+    """Клиент ещё не указал имя и телефон."""
