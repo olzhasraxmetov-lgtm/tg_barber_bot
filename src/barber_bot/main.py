@@ -13,6 +13,7 @@ from barber_bot.bootstrap import application
 from barber_bot.domain.rules import DEFAULT_RULES
 from barber_bot.infrastructure.config import Settings
 from barber_bot.infrastructure.telegram_notifier import NotificationRenderer, TelegramNotifier
+from barber_bot.presentation.roles import Roles
 from barber_bot.presentation.setup import setup as setup_presentation
 from barber_bot.presentation.texts import Formatter
 from barber_bot.seed import seed_demo
@@ -56,6 +57,7 @@ async def main() -> None:
             fmt=fmt,
             rules=app.ctx.rules,
             clock=app.ctx.clock,
+            roles=Roles(settings.master_telegram_id),
         )
         setup_presentation(dp)
         jobs_task = asyncio.create_task(run_jobs_forever(app.jobs))

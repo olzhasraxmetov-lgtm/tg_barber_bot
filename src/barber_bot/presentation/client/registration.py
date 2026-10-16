@@ -16,7 +16,8 @@ from barber_bot.domain.entities import clean_name
 from barber_bot.domain.errors import ClientNotRegisteredError
 from barber_bot.presentation import flash, texts
 from barber_bot.presentation.client.states import ClientMenu, Profile, Registration
-from barber_bot.presentation.deps import client_actions, user, user_id
+from barber_bot.presentation.deps import client_actions, roles, user, user_id
+from barber_bot.presentation.master.menu import on_master_mode
 
 PHONE_KEYBOARD = ReplyKeyboardFactory(
     resize_keyboard=True,
@@ -45,7 +46,13 @@ def _phone_from(message: Message) -> str | None:
 
 async def registration_getter(dialog_manager: DialogManager, **_: Any) -> dict[str, Any]:
     name = _tg_name(dialog_manager)
-    return {"tg_name": name, "tg_name_html": escape(name), "has_tg_name": bool(name)}
+    return {
+        "tg_name": name,
+        "tg_name_html": escape(name),
+        "has_tg_name": bool(name),
+        # Мастер в режиме клиента может передумать регистрироваться.
+        "is_master": roles(dialog_manager).is_master(user_id(dialog_manager)),
+    }
 
 
 async def on_accept_tg_name(_: CallbackQuery, __: Button, manager: DialogManager) -> None:
@@ -97,6 +104,12 @@ registration_dialog = Dialog(
             when="has_tg_name",
         ),
         _name_input(),
+        Button(
+            Const(texts.BTN_MASTER_MODE),
+            id="master_mode",
+            on_click=on_master_mode,
+            when="is_master",
+        ),
         state=Registration.name,
         getter=registration_getter,
     ),

@@ -1,13 +1,9 @@
 """Вход в интерфейс клиента: /start и кнопки под уведомлениями (вне диалогов)."""
 
-from contextlib import suppress
-
 from aiogram import F, Router
-from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandStart
-from aiogram.fsm.state import State
 from aiogram.types import CallbackQuery, Message
-from aiogram_dialog import Data, DialogManager, ShowMode, StartMode
+from aiogram_dialog import DialogManager
 
 from barber_bot.application.client_actions import ClientActions
 from barber_bot.presentation import keyboards, texts
@@ -18,45 +14,18 @@ from barber_bot.presentation.callbacks import (
 )
 from barber_bot.presentation.client.appointments import card_data
 from barber_bot.presentation.client.booking import reschedule_data
-from barber_bot.presentation.client.states import (
-    Booking,
-    ClientMenu,
-    MyAppointments,
-    Registration,
-)
+from barber_bot.presentation.client.states import Booking, MyAppointments
+from barber_bot.presentation.home import open_home, open_over_menu
 
 router = Router(name="client")
 # Подключается после диалогов: иначе перехватит ввод имени и телефона.
 fallback_router = Router(name="client_fallback")
 
 
-async def open_home(manager: DialogManager, actions: ClientActions, telegram_id: int) -> None:
-    """Главное меню, а если профиля ещё нет — регистрация. Старый стек диалогов сбрасывается."""
-    profile = await actions.get_profile(telegram_id)
-    state = ClientMenu.main if profile is not None else Registration.name
-    await manager.start(state, mode=StartMode.RESET_STACK, show_mode=ShowMode.SEND)
-
-
-async def open_over_menu(
-    callback: CallbackQuery, manager: DialogManager, state: State, data: Data = None
-) -> None:
-    """Открыть диалог новым сообщением поверх меню: «🏠 В меню» и «← Назад» вернут в меню."""
-    await manager.start(ClientMenu.main, mode=StartMode.RESET_STACK, show_mode=ShowMode.NO_UPDATE)
-    await manager.start(state, data=data, show_mode=ShowMode.SEND)
-    # aiogram-dialog снимает кнопки с сообщения, из которого пришёл колбэк, а уведомление
-    # должно остаться рабочим: передумав переносить, клиент ещё может нажать «✅ Приду».
-    message = callback.message
-    if isinstance(message, Message) and message.reply_markup is not None:
-        with suppress(TelegramBadRequest):  # «message is not modified» — кнопки и так на месте
-            await message.edit_reply_markup(reply_markup=message.reply_markup)
-
-
 @router.message(CommandStart())
-async def on_start(
-    message: Message, dialog_manager: DialogManager, client_actions: ClientActions
-) -> None:
+async def on_start(message: Message, dialog_manager: DialogManager) -> None:
     if message.from_user is not None:
-        await open_home(dialog_manager, client_actions, message.from_user.id)
+        await open_home(dialog_manager, message.from_user.id)
 
 
 @router.callback_query(
@@ -111,9 +80,7 @@ async def on_book_again(callback: CallbackQuery, dialog_manager: DialogManager) 
 
 
 @fallback_router.message()
-async def on_unexpected_message(
-    message: Message, dialog_manager: DialogManager, client_actions: ClientActions
-) -> None:
+async def on_unexpected_message(message: Message, dialog_manager: DialogManager) -> None:
     """Сообщение вне диалога (например, после перезапуска бота) — показываем меню."""
     if message.from_user is not None:
-        await open_home(dialog_manager, client_actions, message.from_user.id)
+        await open_home(dialog_manager, message.from_user.id)

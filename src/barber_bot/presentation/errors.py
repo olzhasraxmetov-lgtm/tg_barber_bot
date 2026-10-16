@@ -8,10 +8,9 @@ from aiogram.types import ErrorEvent
 from aiogram_dialog import DialogManager
 from aiogram_dialog.api.exceptions import OutdatedIntent, UnknownIntent, UnknownState
 
-from barber_bot.application.client_actions import ClientActions
 from barber_bot.domain.errors import DomainError
 from barber_bot.presentation import texts
-from barber_bot.presentation.client.handlers import open_home
+from barber_bot.presentation.home import open_home
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +29,7 @@ async def on_domain_error(event: ErrorEvent) -> None:
 
 
 @router.error(ExceptionTypeFilter(UnknownIntent, OutdatedIntent, UnknownState))
-async def on_stale_dialog(
-    event: ErrorEvent, dialog_manager: DialogManager, client_actions: ClientActions
-) -> None:
+async def on_stale_dialog(event: ErrorEvent, dialog_manager: DialogManager) -> None:
     """Кнопка из старого сообщения (или бот перезапустился и забыл диалоги)."""
     logger.info("Устаревший диалог: %s", event.exception)
     update = event.update
@@ -43,4 +40,4 @@ async def on_stale_dialog(
     elif update.message is not None:
         user = update.message.from_user
     if user is not None:
-        await open_home(dialog_manager, client_actions, user.id)
+        await open_home(dialog_manager, user.id)

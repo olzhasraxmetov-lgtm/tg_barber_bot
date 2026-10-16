@@ -4,7 +4,7 @@ from html import escape
 from typing import Any
 
 from aiogram_dialog import Dialog, DialogManager, Window
-from aiogram_dialog.widgets.kbd import Start, SwitchTo
+from aiogram_dialog.widgets.kbd import Button, Start, SwitchTo
 from aiogram_dialog.widgets.text import Const, Format
 
 from barber_bot.application.client_actions import ClientActions
@@ -12,17 +12,20 @@ from barber_bot.domain.errors import ClientNotRegisteredError
 from barber_bot.presentation import flash, texts
 from barber_bot.presentation.client.states import Booking, ClientMenu, MyAppointments, Profile
 from barber_bot.presentation.deps import user_id
+from barber_bot.presentation.master.menu import on_master_mode
+from barber_bot.presentation.roles import Roles
 from barber_bot.presentation.texts import Formatter
 
 
 async def menu_getter(
-    dialog_manager: DialogManager, client_actions: ClientActions, **_: Any
+    dialog_manager: DialogManager, client_actions: ClientActions, roles: Roles, **_: Any
 ) -> dict[str, Any]:
-    client = await client_actions.get_profile(user_id(dialog_manager))
+    me = user_id(dialog_manager)
+    client = await client_actions.get_profile(me)
     if client is None:
         raise ClientNotRegisteredError
     menu = texts.MENU.format(name=escape(client.name))
-    return {"text": flash.pop_flash(dialog_manager) + menu}
+    return {"text": flash.pop_flash(dialog_manager) + menu, "is_master": roles.is_master(me)}
 
 
 async def services_getter(
@@ -39,6 +42,12 @@ menu_dialog = Dialog(
         Start(Const(texts.BTN_MY_APPOINTMENTS), id="my", state=MyAppointments.list),
         SwitchTo(Const(texts.BTN_SERVICES), id="services", state=ClientMenu.services),
         Start(Const(texts.BTN_PROFILE), id="profile", state=Profile.view),
+        Button(
+            Const(texts.BTN_MASTER_MODE),
+            id="master_mode",
+            on_click=on_master_mode,
+            when="is_master",
+        ),
         state=ClientMenu.main,
         getter=menu_getter,
     ),

@@ -8,13 +8,23 @@ from aiogram.types import User
 from aiogram_dialog import DialogManager
 
 from barber_bot.application.client_actions import ClientActions
+from barber_bot.application.master_actions import MasterActions
 from barber_bot.application.ports import Clock
 from barber_bot.domain.rules import BookingRules
+from barber_bot.presentation.roles import Roles
 from barber_bot.presentation.texts import Formatter
 
 
 def client_actions(manager: DialogManager) -> ClientActions:
     return cast(ClientActions, manager.middleware_data["client_actions"])
+
+
+def master_actions(manager: DialogManager) -> MasterActions:
+    return cast(MasterActions, manager.middleware_data["master_actions"])
+
+
+def roles(manager: DialogManager) -> Roles:
+    return cast(Roles, manager.middleware_data["roles"])
 
 
 def clock(manager: DialogManager) -> Clock:

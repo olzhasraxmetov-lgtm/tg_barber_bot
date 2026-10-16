@@ -78,6 +78,10 @@ class MasterActions:
 
     # --- ручная запись ---
 
+    def normalize_phone(self, raw: str) -> str:
+        """Проверить телефон сразу при вводе, а не в конце ручной записи."""
+        return self._ctx.normalize_phone(raw)
+
     async def available_dates(self, service_id: int) -> list[date]:
         async with self._ctx.uow() as uow:
             service = await _service(uow, service_id)
