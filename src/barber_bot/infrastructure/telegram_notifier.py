@@ -6,10 +6,9 @@ from dataclasses import dataclass
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError, TelegramForbiddenError, TelegramRetryAfter
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardMarkup
 
 from barber_bot.application.notifications import (
-    AppointmentDetails,
     BookingConfirmation,
     CancelledByClient,
     CancelledByMaster,
@@ -21,13 +20,7 @@ from barber_bot.application.notifications import (
     VisitConfirmed,
 )
 from barber_bot.domain.rules import BookingRules
-from barber_bot.presentation import texts
-from barber_bot.presentation.callbacks import (
-    AppointmentAction,
-    BookAgainCallback,
-    ClientAppointmentCallback,
-    MasterAppointmentCallback,
-)
+from barber_bot.presentation import keyboards, texts
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +46,7 @@ class NotificationRenderer:
         match notification:
             case NewAppointment(details):
                 return OutgoingMessage(
-                    master, texts.new_appointment(details, fmt), _open_for_master(details)
+                    master, texts.new_appointment(details, fmt), keyboards.open_for_master(details)
                 )
             case CancelledByClient(details):
                 return OutgoingMessage(master, texts.cancelled_by_client(details, fmt))
@@ -61,7 +54,7 @@ class NotificationRenderer:
                 return OutgoingMessage(
                     master,
                     texts.rescheduled(details, old_start, fmt),
-                    _open_for_master(details),
+                    keyboards.open_for_master(details),
                 )
             case VisitConfirmed(details):
                 return OutgoingMessage(master, texts.visit_confirmed(details, fmt))
@@ -71,17 +64,17 @@ class NotificationRenderer:
                 return OutgoingMessage(
                     telegram_id,
                     texts.booking_confirmation(details, fmt, self.rules.min_lead),
-                    _client_actions(details, confirm_visit=False),
+                    keyboards.client_actions(details, confirm_visit=False),
                 )
             case Reminder(telegram_id, details):
                 return OutgoingMessage(
                     telegram_id,
                     texts.reminder(details, fmt),
-                    _client_actions(details, confirm_visit=True),
+                    keyboards.client_actions(details, confirm_visit=True),
                 )
             case CancelledByMaster(telegram_id, details):
                 return OutgoingMessage(
-                    telegram_id, texts.cancelled_by_master(details, fmt), _book_again()
+                    telegram_id, texts.cancelled_by_master(details, fmt), keyboards.book_again()
                 )
 
 
@@ -109,42 +102,3 @@ class TelegramNotifier:
 
     async def _send(self, message: OutgoingMessage) -> None:
         await self._bot.send_message(message.chat_id, message.text, reply_markup=message.markup)
-
-
-def _appointment_id(details: AppointmentDetails) -> int:
-    appointment_id = details.appointment.id
-    if appointment_id is None:
-        raise ValueError("Уведомление о записи без id")
-    return appointment_id
-
-
-def _client_actions(details: AppointmentDetails, *, confirm_visit: bool) -> InlineKeyboardMarkup:
-    appointment_id = _appointment_id(details)
-
-    def button(text: str, action: AppointmentAction) -> InlineKeyboardButton:
-        data = ClientAppointmentCallback(action=action, appointment_id=appointment_id)
-        return InlineKeyboardButton(text=text, callback_data=data.pack())
-
-    rows = []
-    if confirm_visit:
-        rows.append([button(texts.BTN_CONFIRM_VISIT, AppointmentAction.CONFIRM_VISIT)])
-    rows.append(
-        [
-            button(texts.BTN_RESCHEDULE, AppointmentAction.RESCHEDULE),
-            button(texts.BTN_CANCEL, AppointmentAction.CANCEL),
-        ]
-    )
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def _book_again() -> InlineKeyboardMarkup:
-    button = InlineKeyboardButton(
-        text=texts.BTN_BOOK_AGAIN, callback_data=BookAgainCallback().pack()
-    )
-    return InlineKeyboardMarkup(inline_keyboard=[[button]])
-
-
-def _open_for_master(details: AppointmentDetails) -> InlineKeyboardMarkup:
-    data = MasterAppointmentCallback(appointment_id=_appointment_id(details))
-    button = InlineKeyboardButton(text=texts.BTN_OPEN_APPOINTMENT, callback_data=data.pack())
-    return InlineKeyboardMarkup(inline_keyboard=[[button]])
