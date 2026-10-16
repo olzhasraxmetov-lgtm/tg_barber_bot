@@ -232,6 +232,10 @@ class SqlScheduleRepository:
         )
         return [_exception(r) for r in await self._s.scalars(query)]
 
+    async def get_exception(self, exception_id: int) -> ScheduleException | None:
+        row = await self._s.get(ScheduleExceptionRow, exception_id)
+        return _exception(row) if row else None
+
     async def add_exception(self, exception: ScheduleException) -> ScheduleException:
         row = ScheduleExceptionRow(
             date_from=exception.date_from,

@@ -119,3 +119,19 @@ def test_horizon_dates_count() -> None:
 def test_grid_cells_cover_whole_duration() -> None:
     cells = grid_cells(at(MONDAY, 10), timedelta(minutes=90), DEFAULT_RULES)
     assert [c.strftime("%H:%M") for c in cells] == ["10:00", "10:30", "11:00"]
+
+
+def test_min_lead_can_be_overridden_for_master() -> None:
+    now = at(MONDAY, 10, 15)
+    result = free_windows(
+        day=MONDAY,
+        duration=HOUR,
+        schedule=SCHEDULE,
+        exceptions=[],
+        busy=[],
+        now=now,
+        tz=TZ,
+        rules=DEFAULT_RULES,
+        min_lead=timedelta(0),
+    )
+    assert times(result)[0] == "10:30"  # прошедшее 10:00 всё равно нельзя

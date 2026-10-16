@@ -48,3 +48,11 @@ class PhoneTakenError(DomainError):
 
 class ClientNotRegisteredError(DomainError):
     """Клиент ещё не указал имя и телефон."""
+
+
+class InvalidNameError(DomainError):
+    """Пустое имя клиента или название услуги."""
+
+
+class InvalidPriceError(DomainError):
+    """Отрицательная цена."""

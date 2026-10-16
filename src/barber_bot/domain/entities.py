@@ -9,20 +9,35 @@ from barber_bot.domain.errors import (
     AppointmentNotActiveError,
     AppointmentNotPastError,
     InvalidDurationError,
+    InvalidNameError,
     InvalidPhoneError,
+    InvalidPriceError,
     TooLateToChangeError,
 )
 from barber_bot.domain.rules import BookingRules
 
+NATIONAL_NUMBER_LENGTH = 10
 
-def normalize_phone(raw: str) -> str:
-    """Оставляет только цифры; российско-казахстанскую «8» в начале меняет на код страны 7."""
+
+def normalize_phone(raw: str, country_code: str = "7") -> str:
+    """Приводит телефон к одному виду — только цифры с кодом страны, — чтобы по нему узнавать
+    клиента. Номер без кода страны (10 цифр) получает `country_code`; для кода 7 ведущая «8»
+    (8 701 …) заменяется на 7."""
     digits = re.sub(r"\D", "", raw)
-    if len(digits) == 11 and digits.startswith("8"):
+    if len(digits) == NATIONAL_NUMBER_LENGTH:
+        digits = country_code + digits
+    elif country_code == "7" and len(digits) == 11 and digits.startswith("8"):
         digits = "7" + digits[1:]
-    if not 10 <= len(digits) <= 15:
+    if not 11 <= len(digits) <= 15:
         raise InvalidPhoneError(raw)
     return digits
+
+
+def clean_name(raw: str) -> str:
+    name = " ".join(raw.split())
+    if not name:
+        raise InvalidNameError
+    return name
 
 
 @dataclass(slots=True)
@@ -42,6 +57,9 @@ class Service:
     id: int | None = None
 
     def validate(self, rules: BookingRules) -> None:
+        self.name = clean_name(self.name)
+        if self.price < 0:
+            raise InvalidPriceError
         step = rules.grid_step_minutes
         if self.duration_minutes <= 0 or self.duration_minutes % step:
             raise InvalidDurationError(f"Длительность должна быть кратна {step} минутам")
@@ -122,10 +140,13 @@ class Appointment:
     def client_can_change(self, now: datetime, rules: BookingRules) -> bool:
         return self.is_active and self.starts_at - now >= rules.min_lead
 
-    def cancel_by_client(self, now: datetime, rules: BookingRules) -> None:
+    def ensure_client_can_change(self, now: datetime, rules: BookingRules) -> None:
         self._require_active()
         if not self.client_can_change(now, rules):
             raise TooLateToChangeError
+
+    def cancel_by_client(self, now: datetime, rules: BookingRules) -> None:
+        self.ensure_client_can_change(now, rules)
         self.status = AppointmentStatus.CANCELLED
         self.cancelled_by = CancelledBy.CLIENT
 
@@ -137,9 +158,7 @@ class Appointment:
 
     def reschedule(self, new_start: datetime, now: datetime, rules: BookingRules) -> None:
         """Перенос клиентом: та же услуга, новое время, напоминание пересчитывается."""
-        self._require_active()
-        if not self.client_can_change(now, rules):
-            raise TooLateToChangeError
+        self.ensure_client_can_change(now, rules)
         self.starts_at = new_start
         self.remind_at = reminder_time(new_start, now, rules)
         self.reminder_sent = False

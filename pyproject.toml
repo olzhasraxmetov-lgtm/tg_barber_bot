@@ -37,7 +37,7 @@ ignore = ["RUF001", "RUF002", "RUF003"]  # кириллица в строках 
 python_version = "3.12"
 strict = true
 mypy_path = "src"
-packages = ["barber_bot"]
+files = ["src", "tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -17,11 +17,13 @@ from barber_bot.application.notifications import (
     CancelledByMaster,
 )
 from barber_bot.application.ports import UnitOfWork
-from barber_bot.domain.entities import Appointment, Client, Service, normalize_phone
+from barber_bot.domain.entities import Appointment, Client, Service, clean_name
 from barber_bot.domain.errors import NotFoundError, WindowUnavailableError
 from barber_bot.domain.schedule import ScheduleException, WeeklySchedule
 
 SCHEDULE_CHANGE_REASON = "Мастер изменил график работы"
+# Мастер записывает клиента хоть «через час» — ему нужен только не прошедший слот.
+MASTER_MIN_LEAD = timedelta(0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,26 +81,35 @@ class MasterActions:
     async def available_dates(self, service_id: int) -> list[date]:
         async with self._ctx.uow() as uow:
             service = await _service(uow, service_id)
-            return await available_dates(self._ctx, uow, service.duration)
+            return await available_dates(self._ctx, uow, service.duration, min_lead=MASTER_MIN_LEAD)
 
     async def free_windows(self, service_id: int, day: date) -> list[datetime]:
         async with self._ctx.uow() as uow:
             service = await _service(uow, service_id)
-            return (await windows_by_day(self._ctx, uow, [day], service.duration))[day]
+            by_day = await windows_by_day(
+                self._ctx, uow, [day], service.duration, min_lead=MASTER_MIN_LEAD
+            )
+            return by_day[day]
 
     async def manual_booking(
         self, name: str, phone: str, service_id: int, starts_at: datetime
     ) -> AppointmentDetails:
-        """Ручная запись. Клиент ищется по телефону; если он уже в боте — получит подтверждение."""
+        """Ручная запись. Клиент ищется по телефону; если он уже в боте — получит подтверждение.
+
+        Правила окон те же, что у клиента, кроме запаса в 3 часа.
+        """
         ctx = self._ctx
-        phone = normalize_phone(phone)
+        phone = ctx.normalize_phone(phone)
+        name = clean_name(name)
         async with ctx.uow() as uow:
             service = await _service(uow, service_id)
-            if not await is_free_window(ctx, uow, starts_at, service.duration):
+            if not await is_free_window(
+                ctx, uow, starts_at, service.duration, min_lead=MASTER_MIN_LEAD
+            ):
                 raise WindowUnavailableError
             client = await uow.clients.by_phone(phone)
             if client is None:
-                client = await uow.clients.add(Client(name.strip(), phone))
+                client = await uow.clients.add(Client(name, phone))
             appointment = await uow.appointments.add(
                 Appointment.book(
                     client_id=_client_id(client),
@@ -148,21 +159,10 @@ class MasterActions:
     ) -> ScheduleChangeResult:
         exception.validate(self._ctx.rules)
         async with self._ctx.uow() as uow:
-            start, _ = self._ctx.day_bounds(exception.date_from)
-            _, end = self._ctx.day_bounds(exception.date_to)
-            now = self._ctx.clock.now()
-            affected = [
-                a
-                for a in await uow.appointments.active_between(max(start, now), end)
-                if a.starts_at >= now
-            ]
-            schedule = await uow.schedule.get_weekly()
             existing = await uow.schedule.exceptions_between(exception.date_from, exception.date_to)
-            conflicts = [
-                a
-                for a in affected
-                if not fits_working_hours(self._ctx, a, schedule, [*existing, exception])
-            ]
+            conflicts = await self._conflicts_in(
+                uow, exception.date_from, exception.date_to, [*existing, exception]
+            )
             result = await self._resolve(uow, conflicts, cancel_conflicts)
             if result.applied:
                 saved = await uow.schedule.add_exception(exception)
@@ -171,10 +171,31 @@ class MasterActions:
         await self._notify_all_cancelled(result, cancel_conflicts)
         return result
 
-    async def delete_exception(self, exception_id: int) -> None:
+    async def delete_exception(
+        self, exception_id: int, *, cancel_conflicts: bool = False
+    ) -> ScheduleChangeResult:
+        """Удаление исключения тоже меняет часы: если оно открывало время, на которое уже есть
+        записи, они не должны остаться «призрачными» — тот же двухшаговый сценарий."""
         async with self._ctx.uow() as uow:
-            await uow.schedule.delete_exception(exception_id)
-            await uow.commit()
+            exception = await uow.schedule.get_exception(exception_id)
+            if exception is None:
+                raise NotFoundError
+            remaining = [
+                e
+                for e in await uow.schedule.exceptions_between(
+                    exception.date_from, exception.date_to
+                )
+                if e.id != exception_id
+            ]
+            conflicts = await self._conflicts_in(
+                uow, exception.date_from, exception.date_to, remaining
+            )
+            result = await self._resolve(uow, conflicts, cancel_conflicts)
+            if result.applied:
+                await uow.schedule.delete_exception(exception_id)
+                await uow.commit()
+        await self._notify_all_cancelled(result, cancel_conflicts)
+        return replace(result, exception=exception)
 
     # --- услуги ---
 
@@ -183,7 +204,7 @@ class MasterActions:
             return await uow.services.list(include_hidden=True)
 
     async def add_service(self, name: str, duration_minutes: int, price: int) -> Service:
-        service = Service(name.strip(), duration_minutes, price)
+        service = Service(name, duration_minutes, price)
         service.validate(self._ctx.rules)
         async with self._ctx.uow() as uow:
             saved = await uow.services.add(service)
@@ -203,7 +224,7 @@ class MasterActions:
         async with self._ctx.uow() as uow:
             service = await _service(uow, service_id)
             if name is not None:
-                service.name = name.strip()
+                service.name = name
             if duration_minutes is not None:
                 service.duration_minutes = duration_minutes
             if price is not None:
@@ -221,6 +242,24 @@ class MasterActions:
         now = self._ctx.clock.now()
         _, end = self._ctx.day_bounds(now.date() + timedelta(days=self._ctx.rules.horizon_days))
         return [a for a in await uow.appointments.active_between(now, end) if a.starts_at >= now]
+
+    async def _conflicts_in(
+        self,
+        uow: UnitOfWork,
+        date_from: date,
+        date_to: date,
+        exceptions: list[ScheduleException],
+    ) -> list[Appointment]:
+        """Будущие записи периода, которые не помещаются в график при данных исключениях."""
+        start, _ = self._ctx.day_bounds(date_from)
+        _, end = self._ctx.day_bounds(date_to)
+        now = self._ctx.clock.now()
+        schedule = await uow.schedule.get_weekly()
+        return [
+            a
+            for a in await uow.appointments.active_between(max(start, now), end)
+            if a.starts_at >= now and not fits_working_hours(self._ctx, a, schedule, exceptions)
+        ]
 
     async def _exceptions_for(
         self, uow: UnitOfWork, appointments: list[Appointment]

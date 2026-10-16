@@ -5,7 +5,7 @@ from datetime import date, datetime, time, timedelta, tzinfo
 from barber_bot.application.notifications import AppointmentDetails, Notification
 from barber_bot.application.ports import Clock, Notifier, UnitOfWork, UnitOfWorkFactory
 from barber_bot.domain.availability import Interval, free_windows, horizon_dates
-from barber_bot.domain.entities import Appointment
+from barber_bot.domain.entities import Appointment, normalize_phone
 from barber_bot.domain.errors import NotFoundError
 from barber_bot.domain.rules import BookingRules
 from barber_bot.domain.schedule import ScheduleException, WeeklySchedule, working_hours_on
@@ -22,6 +22,10 @@ class AppContext:
     notifier: Notifier
     tz: tzinfo
     rules: BookingRules
+    phone_country_code: str = "7"
+
+    def normalize_phone(self, raw: str) -> str:
+        return normalize_phone(raw, self.phone_country_code)
 
     def day_bounds(self, day: date) -> tuple[datetime, datetime]:
         start = datetime.combine(day, time.min, tzinfo=self.tz)
@@ -50,6 +54,7 @@ async def windows_by_day(
     duration: timedelta,
     *,
     exclude_appointment_id: int | None = None,
+    min_lead: timedelta | None = None,
 ) -> dict[date, list[datetime]]:
     """Свободные окна на несколько дней за три запроса к хранилищу."""
     if not days:
@@ -74,6 +79,7 @@ async def windows_by_day(
             now=now,
             tz=ctx.tz,
             rules=ctx.rules,
+            min_lead=min_lead,
         )
         for day in days
     }
@@ -85,10 +91,11 @@ async def available_dates(
     duration: timedelta,
     *,
     exclude_appointment_id: int | None = None,
+    min_lead: timedelta | None = None,
 ) -> list[date]:
     days = horizon_dates(ctx.clock.now(), ctx.rules)
     by_day = await windows_by_day(
-        ctx, uow, days, duration, exclude_appointment_id=exclude_appointment_id
+        ctx, uow, days, duration, exclude_appointment_id=exclude_appointment_id, min_lead=min_lead
     )
     return [day for day, windows in by_day.items() if windows]
 
@@ -100,10 +107,11 @@ async def is_free_window(
     duration: timedelta,
     *,
     exclude_appointment_id: int | None = None,
+    min_lead: timedelta | None = None,
 ) -> bool:
     day = starts_at.astimezone(ctx.tz).date()
     by_day = await windows_by_day(
-        ctx, uow, [day], duration, exclude_appointment_id=exclude_appointment_id
+        ctx, uow, [day], duration, exclude_appointment_id=exclude_appointment_id, min_lead=min_lead
     )
     return starts_at in by_day[day]
 

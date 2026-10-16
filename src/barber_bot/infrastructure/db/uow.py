@@ -4,6 +4,13 @@ from typing import Self
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from barber_bot.application.ports import (
+    AppointmentRepository,
+    ClientRepository,
+    ScheduleRepository,
+    ServiceRepository,
+    SummaryLog,
+)
 from barber_bot.domain.rules import BookingRules
 from barber_bot.infrastructure.db.repositories import (
     SqlAppointmentRepository,
@@ -16,6 +23,14 @@ from barber_bot.infrastructure.db.repositories import (
 
 class SqlUnitOfWork:
     """Одна транзакция на один вызов use case. Без commit() всё откатывается."""
+
+    # Типы портов, а не реализаций: атрибуты протокола UnitOfWork изменяемые, а значит
+    # инвариантные — иначе SqlUnitOfWork формально ему не соответствует.
+    clients: ClientRepository
+    services: ServiceRepository
+    appointments: AppointmentRepository
+    schedule: ScheduleRepository
+    summaries: SummaryLog
 
     def __init__(
         self, session_factory: async_sessionmaker[AsyncSession], tz: tzinfo, rules: BookingRules

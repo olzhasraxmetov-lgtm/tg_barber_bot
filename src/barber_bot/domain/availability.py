@@ -39,8 +39,12 @@ def free_windows(
     now: datetime,
     tz: tzinfo,
     rules: BookingRules,
+    min_lead: timedelta | None = None,
 ) -> list[datetime]:
-    """Времена начала, в которые услуга длительностью `duration` целиком помещается в день."""
+    """Времена начала, в которые услуга длительностью `duration` целиком помещается в день.
+
+    `min_lead` переопределяет запас до начала (мастеру он не нужен — только «не в прошлом»).
+    """
     if not is_within_horizon(day, now, rules):
         return []
     hours = working_hours_on(day, schedule, exceptions)
@@ -53,7 +57,7 @@ def free_windows(
         datetime.combine(day, rules.lunch_start, tzinfo=tz),
         datetime.combine(day, rules.lunch_end, tzinfo=tz),
     )
-    earliest = now + rules.min_lead
+    earliest = now + (rules.min_lead if min_lead is None else min_lead)
 
     windows: list[datetime] = []
     start = day_start

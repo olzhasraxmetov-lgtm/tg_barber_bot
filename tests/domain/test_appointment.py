@@ -8,13 +8,16 @@ from barber_bot.domain.entities import (
     AppointmentStatus,
     CancelledBy,
     Service,
+    clean_name,
     normalize_phone,
 )
 from barber_bot.domain.errors import (
     AppointmentNotActiveError,
     AppointmentNotPastError,
     InvalidDurationError,
+    InvalidNameError,
     InvalidPhoneError,
+    InvalidPriceError,
     InvalidWorkingHoursError,
     TooLateToChangeError,
 )
@@ -132,3 +135,30 @@ def test_phone_is_normalized(raw: str, expected: str) -> None:
 def test_garbage_phone_is_rejected() -> None:
     with pytest.raises(InvalidPhoneError):
         normalize_phone("12-34")
+
+
+def test_phone_without_country_code_gets_default_code() -> None:
+    assert normalize_phone("701 555 55 55") == "77015555555"
+    assert normalize_phone("701 555 55 55", country_code="998") == "9987015555555"
+
+
+def test_leading_eight_is_only_replaced_for_code_7() -> None:
+    assert normalize_phone("8 701 555 55 55") == "77015555555"
+    assert normalize_phone("80291234567", country_code="375") == "80291234567"
+
+
+@pytest.mark.parametrize("name", ["", "   "])
+def test_empty_names_are_rejected(name: str) -> None:
+    with pytest.raises(InvalidNameError):
+        clean_name(name)
+    with pytest.raises(InvalidNameError):
+        Service(name, 30, 100).validate(DEFAULT_RULES)
+
+
+def test_name_whitespace_is_collapsed() -> None:
+    assert clean_name("  Иван   Петров ") == "Иван Петров"
+
+
+def test_negative_price_is_rejected() -> None:
+    with pytest.raises(InvalidPriceError):
+        Service("Стрижка", 30, -1).validate(DEFAULT_RULES)

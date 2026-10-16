@@ -18,7 +18,7 @@ from barber_bot.application.notifications import (
     VisitConfirmed,
 )
 from barber_bot.application.ports import UnitOfWork
-from barber_bot.domain.entities import Appointment, Client, Service, normalize_phone
+from barber_bot.domain.entities import Appointment, Client, Service, clean_name
 from barber_bot.domain.errors import (
     ClientNotRegisteredError,
     NotFoundError,
@@ -41,8 +41,8 @@ class ClientActions:
     async def register(self, telegram_id: int, name: str, phone: str) -> Client:
         """Создаёт или обновляет профиль. Если телефон уже есть у клиента из ручной записи —
         склеивает профили: его записи становятся записями этого Telegram-аккаунта."""
-        phone = normalize_phone(phone)
-        name = name.strip()
+        phone = self._ctx.normalize_phone(phone)
+        name = clean_name(name)
         async with self._ctx.uow() as uow:
             me = await uow.clients.by_telegram_id(telegram_id)
             owner = await uow.clients.by_phone(phone)
@@ -166,6 +166,9 @@ class ClientActions:
         async with ctx.uow() as uow:
             appointment = await _own_appointment(uow, telegram_id, appointment_id)
             old_start = appointment.starts_at
+            # Сначала правило «не позже чем за 3 часа», потом окно — так клиент получит
+            # «свяжитесь с мастером», а не «окно занято», когда переносить уже поздно.
+            appointment.ensure_client_can_change(ctx.clock.now(), ctx.rules)
             if not await is_free_window(
                 ctx, uow, new_start, appointment.duration, exclude_appointment_id=appointment_id
             ):
