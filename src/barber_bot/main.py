@@ -5,11 +5,15 @@ import logging
 from contextlib import suppress
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 
 from barber_bot.application.jobs import BackgroundJobs
 from barber_bot.bootstrap import application
+from barber_bot.domain.rules import DEFAULT_RULES
 from barber_bot.infrastructure.config import Settings
-from barber_bot.infrastructure.logging_notifier import LoggingNotifier
+from barber_bot.infrastructure.telegram_notifier import NotificationRenderer, TelegramNotifier
+from barber_bot.presentation.texts import Formatter
 from barber_bot.seed import seed_demo
 
 logger = logging.getLogger(__name__)
@@ -31,10 +35,18 @@ async def run_jobs_forever(jobs: BackgroundJobs, interval: float = JOBS_INTERVAL
 
 async def main() -> None:
     settings = Settings()  # type: ignore[call-arg]  # обязательные поля приходят из .env
-    async with application(settings, LoggingNotifier()) as app:
+    bot = Bot(
+        settings.bot_token.get_secret_value(),
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
+    renderer = NotificationRenderer(
+        master_telegram_id=settings.master_telegram_id,
+        fmt=Formatter(settings.tz, settings.currency),
+        rules=DEFAULT_RULES,
+    )
+    async with bot, application(settings, TelegramNotifier(bot, renderer)) as app:
         if settings.seed_demo and await seed_demo(app.master):
             logger.info("База пустая — добавлены демо-услуги и график")
-        bot = Bot(settings.bot_token.get_secret_value())
         dp = Dispatcher()
         dp.workflow_data.update(
             settings=settings, client_actions=app.client, master_actions=app.master
