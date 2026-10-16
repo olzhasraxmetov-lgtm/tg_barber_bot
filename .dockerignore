@@ -1,0 +1,17 @@
+.git
+.github
+.tracker
+.venv
+.env
+data
+docs
+tests
+**/__pycache__
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.vscode
+.idea
+*.db
+*.db-wal
+*.db-shm

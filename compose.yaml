@@ -1,0 +1,14 @@
+services:
+  bot:
+    build: .
+    env_file: .env
+    environment:
+      # База всегда в volume, что бы ни стояло в .env.
+      DATABASE_URL: sqlite+aiosqlite:////app/data/barber.db
+    volumes:
+      - bot-data:/app/data
+    restart: unless-stopped
+    # Long polling: Telegram отдаёт обновления только одному получателю — не масштабировать.
+
+volumes:
+  bot-data:
