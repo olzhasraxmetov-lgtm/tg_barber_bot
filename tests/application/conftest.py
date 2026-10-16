@@ -5,8 +5,6 @@ from datetime import time
 from pathlib import Path
 
 import pytest
-from alembic import command
-from alembic.config import Config
 from support import CLIENT_TG, NOW, TZ, App, FakeClock, RecordingNotifier
 
 from barber_bot.application.client_actions import ClientActions
@@ -16,19 +14,14 @@ from barber_bot.application.master_actions import MasterActions
 from barber_bot.domain.rules import DEFAULT_RULES
 from barber_bot.domain.schedule import WeeklySchedule, WorkingHours
 from barber_bot.infrastructure.db.engine import create_engine, create_session_factory
+from barber_bot.infrastructure.db.migrate import upgrade_to_head
 from barber_bot.infrastructure.db.uow import SqlUnitOfWork
-
-ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture
 def db_url(tmp_path: Path) -> str:
     url = f"sqlite+aiosqlite:///{(tmp_path / 'test.db').as_posix()}"
-    cfg = Config(str(ROOT / "alembic.ini"))
-    cfg.set_main_option("script_location", str(ROOT / "migrations"))
-    cfg.set_main_option("sqlalchemy.url", url)
-    cfg.attributes["configure_logger"] = False
-    command.upgrade(cfg, "head")
+    upgrade_to_head(url)
     return url
 
 

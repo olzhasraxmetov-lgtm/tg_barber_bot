@@ -16,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 bot = "barber_bot.main:run"
+seed = "barber_bot.seed:run"
 
 [build-system]
 requires = ["hatchling"]
